@@ -1,13 +1,17 @@
 // mods and packages
 mod db;
+mod auth;
+mod models;
+
 use db::get_db_pool;
+use auth::{hash_password, verify_password};
+use models::*;
 use sqlx::SqlitePool;
-use sqlx::prelude::FromRow;
 use std::collections::HashMap;
 use std::fs;
-use serde::{Serialize, Deserialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+
 
 //----------------------------------------------------------------------------------------------------------
 // creating server to run on
@@ -50,8 +54,6 @@ async fn handle_connection(
     }
 
     let request = String::from_utf8_lossy(&buffer[..bytes_read]);
-    println!("==== RAW REQUEST ====");
-    println!("{}", request);
 
     let (method, path) = parse_request_line(&request);
     let body = extract_body(&request);
@@ -192,7 +194,6 @@ async fn handle_register(
         .map(|s| s.as_str())
         .unwrap_or("");
 
-    println!("REGISTER: {} {} {}", username, password, role);
 
     // if user already exists
     let exists: Option<(i64,)> =
@@ -206,18 +207,19 @@ async fn handle_register(
         send_html(stream, html).await?;
         return Ok(());
     }
+    let hashed = hash_password(password)?;
 
     // insert/register new user
     sqlx::query(
         "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
     )
     .bind(username)
-    .bind(password)
+    .bind(&hashed)
     .bind(role)
     .execute(&pool)
     .await?;
 
-     println!("Registration successful. Redirecting to dashboard.");
+
 
     // redirect to correct dashboard based on registered role
     match role {
@@ -240,55 +242,38 @@ async fn handle_login(
 ) -> anyhow::Result<()> {
     let form = parse_form_urlencoded(body);
 
-    let username = form
-        .get("username")
-        .map(|s| s.as_str())
-        .unwrap_or("");
+    let username = form.get("username").map(String::as_str).unwrap_or("");
+    let password = form.get("password").map(String::as_str).unwrap_or("");
 
-    let password = form
-        .get("password")
-        .map(|s| s.as_str())
-        .unwrap_or("");
-
-    println!("LOGIN: {} {}", username, password);
-
-    // Get password + role
     let user: Option<(String, String)> =
-        sqlx::query_as(
-            "SELECT password, role FROM users WHERE username = ?",
-        )
-        .bind(username)
-        .fetch_optional(&pool)
-        .await?;
+        sqlx::query_as("SELECT password, role FROM users WHERE username = ?")
+            .bind(username)
+            .fetch_optional(&pool)
+            .await?;
 
     match user {
         None => {
-            println!("User does not exist. Redirecting to register.");
-            // ✅ Redirect to register page if user not found
             send_redirect(stream, "/register.html").await?;
         }
-        Some((db_password, role)) => {
-            if db_password != password {
-                let html = b"<h1>Invalid password</h1><a href=\"/\">Back</a>";
-                send_html(stream, html).await?;
-            } else {
-                println!("Login success. Role = {}", role);
+        Some((hashed_password, role)) => {
+            let valid = verify_password(password, &hashed_password)?;
 
-                // Redirect based on role
-                match role.as_str() {
-                    "admin" => send_redirect(stream, "/admin.html").await?,
-                    "lender" => send_redirect_with_cookie(stream, "/lender.html", username).await?,
-                    _ => {
-                        let html = b"<h1>Unknown role</h1>";
-                        send_html(stream, html).await?;
-                    }
-                }
+            if !valid {
+                send_html(stream, b"<h1>Invalid password</h1><a href=\"/\">Back</a>").await?;
+                return Ok(());
+            }
+
+            match role.as_str() {
+                "admin" => send_redirect(stream, "/admin.html").await?,
+                "lender" => send_redirect_with_cookie(stream, "/lender.html", username).await?,
+                _ => send_html(stream, b"<h1>Unknown role</h1>").await?,
             }
         }
     }
 
     Ok(())
 }
+
 
 
 //----------------------------------------------------------------------------------------------------------
@@ -1084,83 +1069,3 @@ fn calculate_loan_status(
     }
 }
 
-//----------------------------------------------------------------------------------------------------------
-// structs
-
-
-//admin structs
-
-#[derive(Serialize, FromRow)]
-struct AdminUser {
-    id: i64,
-    username: String,
-    role: String,
-}
-
-#[derive(Debug, Serialize, FromRow)]
-struct AdminBook {
-    bookid: i64,
-    title: String,
-    author: String,
-    isbn: String,
-    year_of_pub: Option<i64>,
-    genre: Option<String>,
-    total_copies: i64,
-    available_copies: i64,
-    status: String,
-}
-
-
-
-#[derive(Serialize)]
-struct AdminLoan {
-    loanid: i64,
-    username: String,
-    title: String,
-    checkout_date: String,
-    due_date: String,
-    status: String,
-}
-
-
-// lender structs
-
-
-#[derive(Debug, Serialize, FromRow)]
-struct LenderBook {
-    bookid: i64,
-    title: String,
-    author: String,
-    genre: String,
-    available_copies: i64,
-}
-
-#[derive(Debug, Serialize, FromRow)]
-struct LenderLoan {
-    loanid: i64,
-    title: String,
-    checkout_date: String,
-    due_date: String,
-    status: String, 
-}
-
-
-
-
-
-#[derive(Debug, Serialize)]
-struct OverdueLoan {
-    title: String,
-    due_date: String,
-    days_overdue: i64,
-}
-
-#[derive(Deserialize)]
-struct AdminBookInput {
-    title: String,
-    author: String,
-    isbn: String,
-    year_of_pub: Option<i64>,
-    genre: Option<String>,
-    copies: i64,
-}
