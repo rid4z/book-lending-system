@@ -37,7 +37,7 @@ Some notable features aside from the core functionalities described are:
 ##  Code Structure
 
 ```
-cargo.toml
+Cargo.toml
 src/
 ├── main.rs        # TCP server, routing, HTTP parsing
 ├── auth.rs        # Authentication & password validation
