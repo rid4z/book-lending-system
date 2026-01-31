@@ -96,46 +96,39 @@ http://127.0.0.1:8080
 
 ## Database Schema
 
+### Users
+*    id       INTEGER PRIMARY KEY AUTOINCREMENT
+*   username TEXT UNIQUE NOT NULL
+*   password TEXT NOT NULL
+*   role     TEXT NOT NULL
 
-### CREATE Statements
+### Books
+*   bookid           INTEGER PRIMARY KEY AUTOINCREMENT
+*   title            TEXT NOT NULL
+*   author           TEXT NOT NULL
+*   isbn             TEXT UNIQUE NOT NULL
+*   year_of_pub      INTEGER
+*   genre            TEXT
+*   total_copies     INTEGER NOT NULL DEFAULT 0
+*   available_copies INTEGER NOT NULL DEFAULT 0
 
-```sql
-CREATE TABLE IF NOT EXISTS users (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role     TEXT NOT NULL
-);
+### Loans
+*   loanid            INTEGER PRIMARY KEY AUTOINCREMENT
+*   loaned_to_user_id INTEGER NOT NULL
+*   loaned_bookid     INTEGER NOT NULL
+*   checkout_date     TEXT NOT NULL
+*   due_date          TEXT NOT NULL
+*   return_date       TEXT
+*   FOREIGN KEY (loaned_to_user_id) REFERENCES users(id)
+*   FOREIGN KEY (loaned_bookid)     REFERENCES books(bookid)
 
-CREATE TABLE IF NOT EXISTS books (
-    bookid           INTEGER PRIMARY KEY AUTOINCREMENT,
-    title            TEXT NOT NULL,
-    author           TEXT NOT NULL,
-    isbn             TEXT UNIQUE NOT NULL,
-    year_of_pub      INTEGER,
-    genre            TEXT,
-    total_copies     INTEGER NOT NULL DEFAULT 0,
-    available_copies INTEGER NOT NULL DEFAULT 0
-);
+### Sessions
+*   token      TEXT PRIMARY KEY
+*   username   TEXT NOT NULL
+*   role       TEXT NOT NULL
+*   expires_at TEXT NOT NULL
 
-CREATE TABLE IF NOT EXISTS loans (
-    loanid            INTEGER PRIMARY KEY AUTOINCREMENT,
-    loaned_to_user_id INTEGER NOT NULL,
-    loaned_bookid     INTEGER NOT NULL,
-    checkout_date     TEXT NOT NULL,
-    due_date          TEXT NOT NULL,
-    return_date       TEXT,
-    FOREIGN KEY (loaned_to_user_id) REFERENCES users(id),
-    FOREIGN KEY (loaned_bookid)     REFERENCES books(bookid)
-);
 
-CREATE TABLE IF NOT EXISTS sessions (
-    token      TEXT PRIMARY KEY,
-    username   TEXT NOT NULL,
-    role       TEXT NOT NULL,
-    expires_at TEXT NOT NULL
-);
-```
 
 ---
 
