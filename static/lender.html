@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Lender Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f9;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background: #16a085;
+      color: white;
+      padding: 15px 30px;
+    }
+
+    .container {
+      padding: 30px;
+    }
+
+    h2 {
+      margin-top: 40px;
+      border-bottom: 2px solid #ddd;
+      padding-bottom: 5px;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      margin-top: 15px;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    table th, table td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+    }
+
+    table th {
+      background: #ecf0f1;
+    }
+
+    button {
+      padding: 8px 14px;
+      margin-top: 10px;
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+      background: #1abc9c;
+      color: white;
+    }
+
+    button:hover {
+      background: #148f77;
+    }
+
+    .logout {
+      float: right;
+      background: #e74c3c;
+    }
+
+    .logout:hover {
+      background: #c0392b;
+    }
+
+    input[type="text"] {
+      padding: 8px;
+      width: 300px;
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Lender Dashboard</h1>
+  <button class="logout" onclick="logout()">Logout</button>
+</header>
+
+<div class="container">
+
+  <!-- SEARCH BOOKS -->
+  <h2>Search & Browse Books</h2>
+  <div class="card">
+    <input id="searchInput" type="text" placeholder="Search by title, author, ISBN...">
+    <button onclick="searchBooks()">Search</button>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Book ID</th>
+          <th>Title</th>
+          <th>Author</th>
+          <th>Available</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="booksTable">
+        <!-- Filled later -->
+        
+      </tbody>
+    </table>
+  </div>
+
+  <!-- CURRENT LOANS -->
+  <h2>My Borrowed Books</h2>
+  <div class="card">
+    <button onclick="loadMyLoans()">Refresh My Loans</button>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Loan ID</th>
+          <th>Book Title</th>
+          <th>Checkout Date</th>
+          <th>Due Date</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="myLoansTable">
+        <!-- Filled later -->
+        
+      </tbody>
+    </table>
+  </div>
+<!-- OVERDUE INFO -->
+<h2>Overdue Information</h2>
+<div class="card">
+  <p>If any of your books are overdue, they will appear here.</p>
+
+  <button onclick="loadOverdue()">Refresh Overdue</button>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Book</th>
+        <th>Due Date</th>
+        <th>Days Overdue</th>
+      </tr>
+    </thead>
+    <tbody id="overdueTable">
+      <!-- Filled later -->
+    </tbody>
+  </table>
+</div>
+
+
+<!--------------------------------------------------------------------------------------------------->
+<script>
+    async function searchBooks() {
+  const q = document.getElementById("searchInput").value;
+  const res = await fetch("/lender/api/search?q=" + encodeURIComponent(q));
+  const books = await res.json();
+
+  const tbody = document.getElementById("booksTable");
+  tbody.innerHTML = "";
+
+  books.forEach(b => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${b.bookid}</td>
+        <td>${b.title}</td>
+        <td>${b.author}</td>
+        <td>${b.available_copies}</td>
+        <td>
+          <button onclick="checkoutBook(${b.bookid})">Checkout</button>
+        </td>
+      </tr>
+    `;
+  });
+}
+
+
+async function checkoutBook(bookid) {
+  const res = await fetch(`/lender/api/checkout?bookid=${bookid}`, { method: "POST" });
+
+  const text = await res.text();
+  alert(text);
+
+  searchBooks(); // refresh list
+}
+
+
+async function loadMyLoans() {
+  const res = await fetch(`/lender/api/myloans`);
+  const loans = await res.json();
+
+  const tbody = document.getElementById("myLoansTable");
+  tbody.innerHTML = "";
+
+  loans.forEach(l => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${l.loanid}</td>
+        <td>${l.title}</td>
+        <td>${l.checkout_date}</td>
+        <td>${l.due_date}</td>
+        <td>${l.status}</td>
+        <td>
+          <button onclick="returnBook(${l.loanid})">Return</button>
+        </td>
+      </tr>
+    `;
+  });
+}
+
+
+async function returnBook(loanid) {
+  const res = await fetch(`/lender/api/return?loanid=${loanid}`, { method: "POST" });
+  const text = await res.text();
+  alert(text);
+
+  loadMyLoans();     
+  searchBooks();     
+  loadOverdue();  
+}
+
+
+
+async function loadOverdue() {
+  const res = await fetch("/lender/api/overdue");
+  const data = await res.json();
+
+  const tbody = document.querySelector("#overdueTable");
+  tbody.innerHTML = "";
+
+  data.forEach(o => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${o.title}</td>
+        <td>${o.due_date}</td>
+        <td>${o.days_overdue}</td>
+      </tr>
+    `;
+  });
+}
+
+
+
+
+function logout() {
+  document.cookie = "user=; Max-Age=0; path=/";
+  window.location.href = "/";
+}
+
+loadMyLoans();
+loadOverdue();
+
+
+
+</script>
+
+</body>
+</html>

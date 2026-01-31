@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f9;
+      margin: 0;
+    }
+
+    header {
+      background: #2c3e50;
+      color: white;
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .container {
+      padding: 30px;
+    }
+
+    .tabs button {
+      padding: 10px 16px;
+      margin-right: 10px;
+      border: none;
+      border-radius: 4px;
+      background: #3498db;
+      color: white;
+      cursor: pointer;
+    }
+
+    .tabs button:hover {
+      background: #2980b9;
+    }
+
+    .tab {
+      display: none;
+      margin-top: 30px;
+    }
+
+    .tab.active {
+      display: block;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-top: 15px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+    }
+
+    th {
+      background: #ecf0f1;
+    }
+
+    input {
+      padding: 8px;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+
+    .danger {
+      background: #e74c3c;
+    }
+
+    .danger:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .secondary {
+      background: #7f8c8d;
+    }
+
+    button {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 4px;
+      color: white;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h1>Admin Dashboard</h1>
+  <button class="danger" onclick="logout()">Logout</button>
+</header>
+
+<div class="container">
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button onclick="showTab('users')">Users</button>
+    <button onclick="showTab('books')">Books</button>
+    <button onclick="showTab('borrowed')">Borrowed</button>
+    <button onclick="showTab('overdue')">Overdue</button>
+  </div>
+
+  <!-- USERS -->
+  <div id="tab-users" class="tab">
+    <div class="card">
+      <h2>Registered Users</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Username</th><th>Role</th>
+          </tr>
+        </thead>
+        <tbody id="users-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- BOOKS -->
+  <div id="tab-books" class="tab active">
+
+    <!-- MANAGE BOOKS -->
+    <div class="card">
+      <h2>Manage Books</h2>
+
+      <input id="title" placeholder="Title">
+      <input id="author" placeholder="Author">
+      <input id="isbn" placeholder="ISBN">
+      <input id="year" placeholder="Year">
+      <input id="genre" placeholder="Genre">
+      <input id="copies" placeholder="Copies">
+
+      <br>
+
+      <button onclick="addOrIncreaseBook()">Add / Increase Copies</button>
+      <button class="secondary" onclick="clearBookForm()">Clear</button>
+    </div>
+
+    <!-- ALL BOOKS -->
+    <div class="card">
+      <h2>All Books</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Title</th><th>Author</th><th>ISBN</th>
+            <th>Year</th><th>Genre</th>
+            <th>Total</th><th>Available</th><th>Status</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="books-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- BORROWED -->
+  <div id="tab-borrowed" class="tab">
+    <div class="card">
+      <h2>Borrowed Books</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Loan ID</th><th>User</th><th>Book</th>
+            <th>Checkout</th><th>Due</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="borrowed-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- OVERDUE -->
+  <div id="tab-overdue" class="tab">
+    <div class="card">
+      <h2>Overdue Books</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>User</th><th>Book</th><th>Due Date</th><th>Days Overdue</th>
+          </tr>
+        </thead>
+        <tbody id="overdue-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+}
+
+function logout() {
+  window.location.href = "/";
+}
+
+/* ---------------- LOADERS ---------------- */
+
+async function loadUsers() {
+  const res = await fetch('/admin/api/users');
+  const data = await res.json();
+  document.getElementById('users-body').innerHTML = data.map(u =>
+    `<tr><td>${u.id}</td><td>${u.username}</td><td>${u.role}</td></tr>`
+  ).join('');
+}
+async function loadBooks() {
+  const res = await fetch('/admin/api/books');
+  const data = await res.json();
+
+  const tbody = document.getElementById('books-body');
+  tbody.innerHTML = data.map(b => `
+    <tr>
+      <td>${b.bookid}</td>
+      <td>${b.title}</td>
+      <td>${b.author}</td>
+      <td>${b.isbn}</td>
+      <td>${b.year_of_pub ?? '-'}</td>
+      <td>${b.genre ?? '-'}</td>
+      <td>${b.total_copies}</td>
+      <td>${b.available_copies}</td>
+      <td>${b.status}</td>
+      <td>
+        <button onclick="editBook(${b.bookid})">Edit</button>
+        <button class="danger"
+          ${b.has_active_loans ? 'disabled' : ''}
+          onclick="deleteBook(${b.bookid})">
+          Delete
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function loadBorrowed() {
+  const res = await fetch('/admin/api/loans');
+  const data = await res.json();
+
+  document.getElementById('borrowed-body').innerHTML = data.map(l => `
+    <tr>
+      <td>${l.loanid}</td>
+      <td>${l.username}</td>
+      <td>${l.title}</td>
+      <td>${l.checkout_date}</td>
+      <td>${l.due_date}</td>
+      <td>${l.status}</td>
+    </tr>
+  `).join('');
+}
+async function loadOverdue() {
+  const res = await fetch('/admin/api/overdue');
+  const data = await res.json();
+
+  document.getElementById('overdue-body').innerHTML =
+    data.map(o => `
+      <tr>
+        <td>${o.username}</td>
+        <td>${o.title}</td>
+        <td>${o.due_date}</td>
+        <td>${o.days_overdue}</td>
+      </tr>
+    `).join('');
+}
+
+async function addOrIncreaseBook() {
+  if (!copies.value || Number(copies.value) <= 0) {
+  alert("Copies must be greater than 0");
+  return;
+}
+
+if (!window.editingBookId && (!title.value || !author.value || !isbn.value)) {
+  alert("Title, Author and ISBN are required");
+  return;
+}
+
+
+  const payload = {
+    title: title.value,
+    author: author.value,
+    isbn: isbn.value,
+    year_of_pub: year.value ? Number(year.value) : null,
+    genre: genre.value || null,
+    copies: Number(copies.value)
+  };
+
+  const method = window.editingBookId ? "PUT" : "POST";
+  const url = window.editingBookId
+    ? `/admin/api/books?bookid=${window.editingBookId}`
+    : "/admin/api/books";
+
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  alert(await res.text());
+  clearBookForm();
+  loadBooks();
+  window.editingBookId = null;
+}
+
+
+
+function clearBookForm() {
+  ['title','author','isbn','year','genre','copies']
+    .forEach(id => document.getElementById(id).value = '');
+}
+
+function editBook(id) {
+  const row = [...document.querySelectorAll('#books-body tr')]
+    .find(tr => tr.firstElementChild.textContent == id);
+
+  if (!row) return;
+
+  title.value  = row.children[1].textContent;
+  author.value = row.children[2].textContent;
+  isbn.value   = row.children[3].textContent;
+  year.value   = row.children[4].textContent !== '-' ? row.children[4].textContent : '';
+  genre.value  = row.children[5].textContent !== '-' ? row.children[5].textContent : '';
+
+  // IMPORTANT: copies = TOTAL copies
+  copies.value = row.children[6].textContent;
+
+  window.editingBookId = id;
+}
+
+
+
+async function deleteBook(id) {
+  if (!confirm("Are you sure you want to delete this book?")) return;
+
+  const res = await fetch(`/admin/api/books?bookid=${id}`, {
+    method: "DELETE"
+  });
+
+  const msg = await res.text();
+  alert(msg);
+  loadBooks();
+}
+
+
+
+/* Page load */
+window.onload = () => {
+  showTab('books');
+  loadUsers();
+  loadBooks();
+  loadBorrowed();
+  loadOverdue();
+};
+</script>
+
+</body>
+</html>
