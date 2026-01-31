@@ -1,9 +1,8 @@
 use sqlx::{
-    prelude::FromRow,
     sqlite::{SqliteConnectOptions, SqlitePool},
     Executor,
 };
-use chrono::{Utc, Duration};
+
 
 pub async fn get_db_pool() -> SqlitePool {
     let options = SqliteConnectOptions::new()

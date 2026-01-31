@@ -1,16 +1,18 @@
 // mods and packages
 mod db;
-mod auth;
-mod models;
 
+mod models;
+mod auth;
 use db::get_db_pool;
-use auth::{hash_password, verify_password};
-use models::*;
 use sqlx::SqlitePool;
+
 use std::collections::HashMap;
 use std::fs;
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use auth::{hash_password, verify_password};
+use models::*;
 
 
 //----------------------------------------------------------------------------------------------------------
@@ -54,6 +56,8 @@ async fn handle_connection(
     }
 
     let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+    println!("==== RAW REQUEST ====");
+    println!("{}", request);
 
     let (method, path) = parse_request_line(&request);
     let body = extract_body(&request);
@@ -194,6 +198,7 @@ async fn handle_register(
         .map(|s| s.as_str())
         .unwrap_or("");
 
+    println!("REGISTER: {} {} {}", username, password, role);
 
     // if user already exists
     let exists: Option<(i64,)> =
@@ -219,7 +224,7 @@ async fn handle_register(
     .execute(&pool)
     .await?;
 
-
+     println!("Registration successful. Redirecting to dashboard.");
 
     // redirect to correct dashboard based on registered role
     match role {
@@ -242,38 +247,58 @@ async fn handle_login(
 ) -> anyhow::Result<()> {
     let form = parse_form_urlencoded(body);
 
-    let username = form.get("username").map(String::as_str).unwrap_or("");
-    let password = form.get("password").map(String::as_str).unwrap_or("");
+    let username = form
+        .get("username")
+        .map(|s| s.as_str())
+        .unwrap_or("");
 
+    let password = form
+        .get("password")
+        .map(|s| s.as_str())
+        .unwrap_or("");
+
+    println!("LOGIN: {} {}", username, password);
+
+    // Get password + role
     let user: Option<(String, String)> =
-        sqlx::query_as("SELECT password, role FROM users WHERE username = ?")
-            .bind(username)
-            .fetch_optional(&pool)
-            .await?;
+        sqlx::query_as(
+            "SELECT password, role FROM users WHERE username = ?",
+        )
+        .bind(username)
+        .fetch_optional(&pool)
+        .await?;
 
     match user {
-        None => {
-            send_redirect(stream, "/register.html").await?;
+    None => {
+        send_redirect(stream, "/register.html").await?;
+    }
+    Some((db_password, role)) => {
+        let valid = verify_password(password, &db_password)?;
+
+        if !valid {
+            let html = b"<h1>Invalid password</h1><a href=\"/\">Back</a>";
+            send_html(stream, html).await?;
+            return Ok(());
         }
-        Some((hashed_password, role)) => {
-            let valid = verify_password(password, &hashed_password)?;
 
-            if !valid {
-                send_html(stream, b"<h1>Invalid password</h1><a href=\"/\">Back</a>").await?;
-                return Ok(());
+        println!("Login success. Role = {}", role);
+
+        match role.as_str() {
+            "admin" => send_redirect(stream, "/admin.html").await?,
+            "lender" => {
+                send_redirect_with_cookie(stream, "/lender.html", username).await?
             }
-
-            match role.as_str() {
-                "admin" => send_redirect(stream, "/admin.html").await?,
-                "lender" => send_redirect_with_cookie(stream, "/lender.html", username).await?,
-                _ => send_html(stream, b"<h1>Unknown role</h1>").await?,
+            _ => {
+                let html = b"<h1>Unknown role</h1>";
+                send_html(stream, html).await?;
             }
         }
     }
+}
+
 
     Ok(())
 }
-
 
 
 //----------------------------------------------------------------------------------------------------------
@@ -425,7 +450,7 @@ async fn handle_admin_add_book(
         .await?;
 
     match existing {
-        Some((bookid, total, available)) => {
+        Some((bookid, _, _)) => {
             // increase copies
             sqlx::query(
                 "
