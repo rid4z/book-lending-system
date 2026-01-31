@@ -33,6 +33,27 @@ Some notable features aside from the core functionalities described are:
 
 ---
 
+
+##  Code Structure
+
+```
+cargo.toml
+src/
+├── main.rs        # TCP server, routing, HTTP parsing
+├── auth.rs        # Authentication & password validation
+├── db.rs          # Database connection & schema
+├── models.rs     # Shared data structs
+```
+
+```
+static/
+├── index.html
+├── register.html
+├── admin.html
+├── lender.html
+```
+---
+
 ## Setup Instructions 
 
 ### Prerequisites
@@ -570,22 +591,3 @@ Returns the logged-in user's overdue loans (unreturned and past due date).
 | `due_date`       | string | `YYYY-MM-DD`                         |
 | `days_overdue`   | number | Number of days past the due date     |
 
----
-
-##  Code Structure
-
-```
-src/
-├── main.rs        # TCP server, routing, HTTP parsing
-├── auth.rs        # Authentication & password validation
-├── db.rs          # Database connection & schema
-├── models.rs     # Shared data structs
-```
-
-```
-static/
-├── index.html
-├── register.html
-├── admin.html
-├── lender.html
-```
