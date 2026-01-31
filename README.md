@@ -8,12 +8,18 @@ The application supports **role-based access** (`admin`, `lender`), session-base
 
 ## Features
 
-* User authentication with secure session cookies
-* Role-based access control (Admin / Lender)
-* Book inventory management (CRUD)
-* Loan checkout, return, and overdue tracking
-* SQLite database with transactional integrity
-* Zero external web frameworks (manual HTTP parsing)
+The idea is to have 2 types of users: admins and lenders. The admins can access their dashboard where CRUD operations are utilised, as well as they are given privileges such as to:
+1. View all books in the system
+2. View all users registered in the system
+3. View currently borrowed books and by whom
+4. View overdue books
+
+The lenders have their own dashboard, where they can search for books, checkout books, return books, as well as view overdue books.
+
+Some notable features aside from the core functionalities described are:
+1. User authentication with secure session cookies
+2. Secure password storage via hashing
+3. Handling due dates and overdue dates calculations
 
 ---
 
@@ -39,8 +45,8 @@ The application supports **role-based access** (`admin`, `lender`), session-base
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/library-management-system.git
-cd library-management-system
+git clone <repository-url>
+cd book-lending-system
 ```
 
 ### Install Dependencies
