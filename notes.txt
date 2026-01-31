@@ -1,0 +1,120 @@
+used sqlx crate to use sqlite db pw/// cdsfdgd
+
+i need to make a web page, a login page/ register page
+
+made a login page and register page
+made tables also
+inserted data and viewed it too
+
+now need to figure out how to send data from login and register pages to
+the db
+
+
+done.
+made admin dashboard and lender dashboard too
+
+now need to work on endpoints + crud
+
+
+users retrieval done
+
+
+-add bunch of books in books table
+-add stuff in loans table
+-fix retrieval for them in both dashboards
+
+tmrw
+-work on deletion and updation
+-work on secndary features 
+	-hashing
+	-login page dilemma discussed w abay
+	-admin can add books?
+	-calculate status instead of manually doing it internally
+	-session management?
+	-review full code to see where we can optimise
+	-fix search in lender dashboard
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+Features to Implement
+1. User Management
+● Two user types: Admin and Lender (regular user) DONE
+
+[[[WHEN ADDING NEW USER VIA LOGIN, NOTIF SHD POP UP SAYING U
+ R A NEW USER, PLEASE REGISTER]]] not wokring for anything actually its fine
+
+
+● Registration and login system DONE
+
+
+● Password hashing and basic security measures 
+● Session management
+
+
+
+2. Book Management (Admin)
+● Add, edit, and remove books from the library
+● Book details should include:
+○ Title, author, ISBN DONE
+○ Publication year DONE
+○ Genre/category DONE
+○ Number of copies available DONE
+○ Current status (available, checked out, etc.) DONE
+
+
+
+3. Lending System
+● Lenders can search and browse available books DONE
+
+ADD A RERESH BUTTON OF SOME SORT TO UPDATE COUNT OF BOOKS// done
+
+
+● Lenders can check out books (if available) DONE
+● Lenders can view their currently borrowed books DONE
+● Lenders can return books DONE
+● Implement due dates and overdue calculations DONE
+
+
+
+4. Admin Dashboard
+● View all books in the system DONE
+● View all users registered in the system DONE
+● View currently borrowed books and by whom DONE
+
+● View overdue books and [[generate notifications]]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+5. API Endpoints
+Implement RESTful API endpoints for at least the following:
+● User authentication (login/logout) DONE
+● Book CRUD operations
+● Borrow/return operations
+● Search functionality
+● Admin-specific operations
+
+
+Database Schema
+Design your own appropriate database schema, but it should include at least:
+● Users table (with role information) DONE
+● Books table DONE
+● Lending records table DONE
+● Any other tables as needed

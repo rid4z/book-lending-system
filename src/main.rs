@@ -11,7 +11,7 @@ use std::fs;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use auth::{hash_password, verify_password};
+use auth::{hash_password, verify_password, generate_session_token};
 use models::*;
 
 
@@ -24,6 +24,7 @@ async fn main() -> anyhow::Result<()> {
     println!("Starting async server...");
 
     let pool = get_db_pool().await;
+    
     println!("Database ready.");
 
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
@@ -45,6 +46,8 @@ async fn main() -> anyhow::Result<()> {
 // get/post from webpages sent back to server
 
 
+
+
 async fn handle_connection(
     mut stream: TcpStream,
     pool: SqlitePool,
@@ -61,7 +64,9 @@ async fn handle_connection(
 
     let (method, path) = parse_request_line(&request);
     let body = extract_body(&request);
-    let logged_in_user = get_logged_in_user(&request);
+
+    // Resolve session from cookie (DB-backed)
+    let session = resolve_session(&request, &pool).await;
 
 
     match (method.as_str(), path.as_str()) {
@@ -73,96 +78,161 @@ async fn handle_connection(
         ("POST", "/login") => handle_login(&mut stream, pool, body).await?,
         ("POST", "/register") => handle_register(&mut stream, pool, body).await?,
 
-        ("GET", "/admin.html") => serve_file(&mut stream, "static/admin.html").await?,
-        ("GET", "/lender.html") => serve_file(&mut stream, "static/lender.html").await?,
+        // logout — destroys session then redirects
+        ("GET", "/logout") | ("POST", "/logout") => {
+            destroy_session(&pool, &request).await;
+            send_logout_redirect(&mut stream).await?;
+        }
 
-        // admin dashboard api setups
-        ("GET", "/admin/api/users") => handle_admin_users(&mut stream, pool).await?,
-        ("GET", "/admin/api/books") => handle_admin_books(&mut stream, pool).await?,
-        ("GET", "/admin/api/loans") => handle_admin_loans(&mut stream, pool).await?,
+        // protected pages — require valid session with correct role
+        ("GET", "/admin.html") => {
+            match &session {
+                Some((_, role)) if role == "admin" => {
+                    serve_file(&mut stream, "static/admin.html").await?
+                }
+                _ => send_redirect(&mut stream, "/").await?,
+            }
+        }
+        ("GET", "/lender.html") => {
+            match &session {
+                Some((_, role)) if role == "lender" => {
+                    serve_file(&mut stream, "static/lender.html").await?
+                }
+                _ => send_redirect(&mut stream, "/").await?,
+            }
+        }
 
-        // lender dashboard api setups
-        ("GET", "/lender/api/books") => handle_lender_books(&mut stream, pool).await?,
+        // admin dashboard api — all gated on admin session
+        ("GET", "/admin/api/users") => {
+            match &session {
+                Some((_, role)) if role == "admin" => {
+                    handle_admin_users(&mut stream, pool).await?
+                }
+                _ => send_json(&mut stream, b"{\"error\":\"unauthorized\"}").await?,
+            }
+        }
+        ("GET", "/admin/api/books") => {
+            match &session {
+                Some((_, role)) if role == "admin" => {
+                    handle_admin_books(&mut stream, pool).await?
+                }
+                _ => send_json(&mut stream, b"{\"error\":\"unauthorized\"}").await?,
+            }
+        }
+        ("GET", "/admin/api/loans") => {
+            match &session {
+                Some((_, role)) if role == "admin" => {
+                    handle_admin_loans(&mut stream, pool).await?
+                }
+                _ => send_json(&mut stream, b"{\"error\":\"unauthorized\"}").await?,
+            }
+        }
+        ("GET", "/admin/api/overdue") => {
+            match &session {
+                Some((_, role)) if role == "admin" => {
+                    handle_admin_overdue(&mut stream, pool).await?
+                }
+                _ => send_json(&mut stream, b"{\"error\":\"unauthorized\"}").await?,
+            }
+        }
+        ("POST", "/admin/api/books") => {
+            match &session {
+                Some((_, role)) if role == "admin" => {
+                    handle_admin_add_book(&mut stream, pool, body).await?
+                }
+                _ => send_json(&mut stream, b"{\"error\":\"unauthorized\"}").await?,
+            }
+        }
+        ("PUT", path) if path.starts_with("/admin/api/books") => {
+            match &session {
+                Some((_, role)) if role == "admin" => {
+                    if let Some(bookid) = parse_query_param(path, "bookid")
+                        .and_then(|v| v.parse::<i64>().ok())
+                    {
+                        handle_admin_update_book(&mut stream, pool, bookid, body).await?;
+                    } else {
+                        send_html(&mut stream, b"Missing bookid").await?;
+                    }
+                }
+                _ => { send_json(&mut stream, b"{\"error\":\"unauthorized\"}").await?; }
+            }
+        }
+        ("DELETE", path) if path.starts_with("/admin/api/books") => {
+            match &session {
+                Some((_, role)) if role == "admin" => {
+                    if let Some(bookid) = parse_query_param(path, "bookid")
+                        .and_then(|v| v.parse::<i64>().ok())
+                    {
+                        handle_admin_delete_book(&mut stream, pool, bookid).await?;
+                    } else {
+                        send_html(&mut stream, b"Missing bookid").await?;
+                    }
+                }
+                _ => { send_json(&mut stream, b"{\"error\":\"unauthorized\"}").await?; }
+            }
+        }
+
+        // lender dashboard api — gated on lender session
+        ("GET", "/lender/api/books") => {
+            match &session {
+                Some((_, role)) if role == "lender" => {
+                    handle_lender_books(&mut stream, pool).await?
+                }
+                _ => send_json(&mut stream, b"[]").await?,
+            }
+        }
         ("GET", path) if path.starts_with("/lender/api/search") => {
-            if let Some(q) = parse_query_param(path, "q") {
-                handle_lender_search(&mut stream, pool, &q).await?;
-            } else {
-                send_json(&mut stream, b"[]").await?;
+            match &session {
+                Some((_, role)) if role == "lender" => {
+                    if let Some(q) = parse_query_param(path, "q") {
+                        handle_lender_search(&mut stream, pool, &q).await?;
+                    } else {
+                        send_json(&mut stream, b"[]").await?;
+                    }
+                }
+                _ => { send_json(&mut stream, b"[]").await?; }
             }
         }
         ("GET", path) if path.starts_with("/lender/api/myloans") => {
-            let user = match &logged_in_user {
-                Some(u) => u.clone(),
-                None => {
-                    send_json(&mut stream, b"[]").await?;
-                    return Ok(());
+            match &session {
+                Some((username, role)) if role == "lender" => {
+                    handle_lender_myloans(&mut stream, pool, username).await?;
                 }
-            };
-
-            handle_lender_myloans(&mut stream, pool, &user).await?;
+                _ => { send_json(&mut stream, b"[]").await?; }
+            }
         }
         ("POST", path) if path.starts_with("/lender/api/checkout") => {
-            let user = match &logged_in_user {
-                Some(u) => u.clone(),
-                None => {
-                    send_html(&mut stream, b"<h1>Not logged in</h1>").await?;
-                    return Ok(());
+            match &session {
+                Some((username, role)) if role == "lender" => {
+                    if let Some(bookid) = parse_query_param(path, "bookid").and_then(|v| v.parse().ok()) {
+                        handle_lender_checkout(&mut stream, pool, username, bookid).await?;
+                    } else {
+                        send_html(&mut stream, b"<h1>Invalid checkout request</h1>").await?;
+                    }
                 }
-            };
-            if let Some(bookid) = parse_query_param(path, "bookid").and_then(|v| v.parse().ok()) {
-                handle_lender_checkout(&mut stream, pool, &user, bookid).await?;
-            } else {
-                send_html(&mut stream, b"<h1>Invalid checkout request</h1>").await?;
+                _ => { send_html(&mut stream, b"<h1>Not logged in</h1>").await?; }
             }
         }
         ("POST", path) if path.starts_with("/lender/api/return") => {
-            if let Some(loanid) = parse_query_param(path, "loanid").and_then(|v| v.parse().ok()) {
-                handle_lender_return(&mut stream, pool, loanid).await?;
-            } else {
-                send_html(&mut stream, b"<h1>Invalid return request</h1>").await?;
+            match &session {
+                Some((_, role)) if role == "lender" => {
+                    if let Some(loanid) = parse_query_param(path, "loanid").and_then(|v| v.parse().ok()) {
+                        handle_lender_return(&mut stream, pool, loanid).await?;
+                    } else {
+                        send_html(&mut stream, b"<h1>Invalid return request</h1>").await?;
+                    }
+                }
+                _ => { send_html(&mut stream, b"<h1>Not logged in</h1>").await?; }
             }
         }
-
         ("GET", path) if path.starts_with("/lender/api/overdue") => {
-            if let Some(user) = &logged_in_user {
-                handle_lender_overdue(&mut stream, pool, user).await?;
-            } else {
-                send_json(&mut stream, b"[]").await?;
+            match &session {
+                Some((username, role)) if role == "lender" => {
+                    handle_lender_overdue(&mut stream, pool, username).await?;
+                }
+                _ => { send_json(&mut stream, b"[]").await?; }
             }
         }
-        
-
-        // ---------- ADMIN BOOK CRUD ----------
-        ("POST", "/admin/api/books") => {
-            handle_admin_add_book(&mut stream, pool, body).await?;
-        }
-
-        ("PUT", path) if path.starts_with("/admin/api/books") => {
-            if let Some(bookid) = parse_query_param(path, "bookid")
-                .and_then(|v| v.parse::<i64>().ok())
-            {
-                handle_admin_update_book(&mut stream, pool, bookid, body).await?;
-            } else {
-                send_html(&mut stream, b"Missing bookid").await?;
-            }
-        }
-
-        ("DELETE", path) if path.starts_with("/admin/api/books") => {
-            if let Some(bookid) = parse_query_param(path, "bookid")
-                .and_then(|v| v.parse::<i64>().ok())
-            {
-                handle_admin_delete_book(&mut stream, pool, bookid).await?;
-            } else {
-                send_html(&mut stream, b"Missing bookid").await?;
-            }
-        }
-
-        ("GET", "/admin/api/overdue") => {
-        handle_admin_overdue(&mut stream, pool).await?;
-    }
-
-
-
 
         _ => send_404(&mut stream).await?,
     }
@@ -228,8 +298,14 @@ async fn handle_register(
 
     // redirect to correct dashboard based on registered role
     match role {
-        "admin" => send_redirect(stream, "/admin.html").await?,
-        "lender" => send_redirect_with_cookie(stream, "/lender.html", username).await?,
+        "admin" => {
+            let token = create_session(&pool, username, "admin").await?;
+            send_redirect_with_session_cookie(stream, "/admin.html", &token).await?;
+        }
+        "lender" => {
+            let token = create_session(&pool, username, "lender").await?;
+            send_redirect_with_session_cookie(stream, "/lender.html", &token).await?;
+        }
         _ => {
             let html = b"<h1>Unknown role</h1>";
             send_html(stream, html).await?;
@@ -284,9 +360,13 @@ async fn handle_login(
         println!("Login success. Role = {}", role);
 
         match role.as_str() {
-            "admin" => send_redirect(stream, "/admin.html").await?,
+            "admin" => {
+                let token = create_session(&pool, username, "admin").await?;
+                send_redirect_with_session_cookie(stream, "/admin.html", &token).await?;
+            }
             "lender" => {
-                send_redirect_with_cookie(stream, "/lender.html", username).await?
+                let token = create_session(&pool, username, "lender").await?;
+                send_redirect_with_session_cookie(stream, "/lender.html", &token).await?;
             }
             _ => {
                 let html = b"<h1>Unknown role</h1>";
@@ -924,20 +1004,34 @@ async fn send_redirect(
 }
 
 
-async fn send_redirect_with_cookie(
+async fn send_redirect_with_session_cookie(
     stream: &mut TcpStream,
     location: &str,
-    username: &str,
+    token: &str,
 ) -> anyhow::Result<()> {
     let response = format!(
         "HTTP/1.1 302 Found\r\n\
          Location: {}\r\n\
-         Set-Cookie: user={}; Path=/\r\n\
+         Set-Cookie: session={}; Path=/; HttpOnly\r\n\
          Content-Length: 0\r\n\
          Connection: close\r\n\
          \r\n",
-        location,
-        username
+        location, token
+    );
+
+    stream.write_all(response.as_bytes()).await?;
+    Ok(())
+}
+
+/// Clears the session cookie and redirects to login
+async fn send_logout_redirect(stream: &mut TcpStream) -> anyhow::Result<()> {
+    let response = format!(
+        "HTTP/1.1 302 Found\r\n\
+         Location: /\r\n\
+         Set-Cookie: session=; Path=/; HttpOnly; Max-Age=0\r\n\
+         Content-Length: 0\r\n\
+         Connection: close\r\n\
+         \r\n"
     );
 
     stream.write_all(response.as_bytes()).await?;
@@ -945,19 +1039,86 @@ async fn send_redirect_with_cookie(
 }
 
 
-fn get_logged_in_user(request: &str) -> Option<String> {
+/// Looks up the session cookie token in the DB.
+/// Returns Some((username, role)) if a valid non-expired session exists, else None.
+async fn resolve_session(request: &str, pool: &SqlitePool) -> Option<(String, String)> {
+    let token = get_cookie_value(request, "session")?;
+
+    let row: Option<(String, String, String)> = sqlx::query_as(
+        "SELECT username, role, expires_at FROM sessions WHERE token = ?"
+    )
+    .bind(&token)
+    .fetch_optional(pool)
+    .await
+    .ok()?;
+
+    match row {
+        Some((username, role, expires_at)) => {
+            let expiry = chrono::NaiveDateTime::parse_from_str(&expires_at, "%Y-%m-%d %H:%M:%S")
+                .ok()?;
+            let now = chrono::Utc::now().naive_utc();
+
+            if now > expiry {
+                // Session expired — delete it silently
+                let _ = sqlx::query("DELETE FROM sessions WHERE token = ?")
+                    .bind(&token)
+                    .execute(pool)
+                    .await;
+                None
+            } else {
+                Some((username, role))
+            }
+        }
+        None => None,
+    }
+}
+
+/// Extracts a specific cookie value from the raw request string
+fn get_cookie_value(request: &str, name: &str) -> Option<String> {
+    let prefix = format!("{}=", name);
     for line in request.lines() {
         if line.starts_with("Cookie:") {
-            let cookies = line.replace("Cookie: ", "");
+            let cookies = line.strip_prefix("Cookie: ").unwrap_or(line);
             for cookie in cookies.split(';') {
                 let cookie = cookie.trim();
-                if let Some(value) = cookie.strip_prefix("user=") {
+                if let Some(value) = cookie.strip_prefix(&prefix) {
                     return Some(value.to_string());
                 }
             }
         }
     }
     None
+}
+
+/// Creates a session row in the DB and returns the token
+async fn create_session(pool: &SqlitePool, username: &str, role: &str) -> anyhow::Result<String> {
+    let token = generate_session_token();
+    // Session lasts 24 hours
+    let expires_at = (chrono::Utc::now().naive_utc() + chrono::Duration::hours(24))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+
+    sqlx::query(
+        "INSERT INTO sessions (token, username, role, expires_at) VALUES (?, ?, ?, ?)"
+    )
+    .bind(&token)
+    .bind(username)
+    .bind(role)
+    .bind(&expires_at)
+    .execute(pool)
+    .await?;
+
+    Ok(token)
+}
+
+/// Deletes a session from the DB by token
+async fn destroy_session(pool: &SqlitePool, request: &str) {
+    if let Some(token) = get_cookie_value(request, "session") {
+        let _ = sqlx::query("DELETE FROM sessions WHERE token = ?")
+            .bind(&token)
+            .execute(pool)
+            .await;
+    }
 }
 
 

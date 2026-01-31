@@ -3,7 +3,6 @@ use sqlx::{
     Executor,
 };
 
-
 pub async fn get_db_pool() -> SqlitePool {
     let options = SqliteConnectOptions::new()
         .filename("test.db")
@@ -13,14 +12,19 @@ pub async fn get_db_pool() -> SqlitePool {
         .await
         .expect("Failed to connect to DB");
 
+    // Enable foreign keys (off by default in SQLite)
+    pool.execute("PRAGMA foreign_keys = ON")
+        .await
+        .unwrap();
+
     // Users
     pool.execute(
         "
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT,
-            role TEXT
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL
         )
         ",
     )
@@ -32,14 +36,13 @@ pub async fn get_db_pool() -> SqlitePool {
         "
         CREATE TABLE IF NOT EXISTS books (
             bookid INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT, 
-            author TEXT,
-            isbn TEXT,
+            title TEXT NOT NULL,
+            author TEXT NOT NULL,
+            isbn TEXT UNIQUE NOT NULL,
             year_of_pub INTEGER,
             genre TEXT,
-            total_copies INTEGER,
-            available_copies INTEGER,
-            status TEXT
+            total_copies INTEGER NOT NULL DEFAULT 0,
+            available_copies INTEGER NOT NULL DEFAULT 0
         )
         ",
     )
@@ -51,12 +54,11 @@ pub async fn get_db_pool() -> SqlitePool {
         "
         CREATE TABLE IF NOT EXISTS loans (
             loanid INTEGER PRIMARY KEY AUTOINCREMENT,
-            loaned_to_user_id INTEGER, 
-            loaned_bookid INTEGER,
-            checkout_date TEXT,
-            due_date TEXT,
+            loaned_to_user_id INTEGER NOT NULL,
+            loaned_bookid INTEGER NOT NULL,
+            checkout_date TEXT NOT NULL,
+            due_date TEXT NOT NULL,
             return_date TEXT,
-            status TEXT,
             FOREIGN KEY(loaned_to_user_id) REFERENCES users(id),
             FOREIGN KEY(loaned_bookid) REFERENCES books(bookid)
         )
@@ -65,65 +67,19 @@ pub async fn get_db_pool() -> SqlitePool {
     .await
     .unwrap();
 
+    // Sessions
+    pool.execute(
+        "
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            role TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )
+        ",
+    )
+    .await
+    .unwrap();
+
     pool
 }
-
-
-
-//     sqlx::query("INSERT INTO users (username, password, role) VALUES (?1, ?2, ?3)")
-//     .bind("lender1")
-//     .bind("lenderpass")
-//     .bind("lender")
-//     .execute(&connection)
-//     .await
-//     .unwrap();
-
-//     sqlx::query("INSERT INTO books (title, author, isbn, year_of_pub, genre, total_copies, available_copies, status) 
-// VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
-//     .bind("The Rust Programming Language")
-//     .bind("Steve Klabnik")
-//     .bind("9781593278281")
-//     .bind(2019)
-//     .bind("Programming")
-//     .bind(5)
-//     .bind(5)
-//     .bind("available")
-//     .execute(&connection)
-//     .await
-//     .unwrap();
-
-//     sqlx::query("INSERT INTO loans (loaned_to_user_id, loaned_bookid, checkout_date, due_date, return_date, status) 
-// VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
-//     .bind(2)
-//     .bind(1)
-//     .bind("2026-01-30")
-//     .bind("2026-02-13")
-//     .bind("")
-//     .bind("active")
-//     .execute(&connection)
-//     .await
-//     .unwrap();
-
-
-
-//     let users:Vec<User> = sqlx::query_as("SELECT * FROM users").fetch_all(&connection).await.unwrap();
-
-//     for u in users {
-//         println!("{:?}", u);
-//     }
-
-
-//     let books:Vec<Book> = sqlx::query_as("SELECT * FROM books").fetch_all(&connection).await.unwrap();
-
-//     for b in books {
-//         println!("{:?}", b);
-//     }
-
-
-//     let loans:Vec<Loan> = sqlx::query_as("SELECT * FROM loans").fetch_all(&connection).await.unwrap();
-
-//     for l in loans {
-//         println!("{:?}", l);
-//     }
-// }
-

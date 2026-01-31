@@ -250,8 +250,7 @@ async function loadOverdue() {
 
 
 function logout() {
-  document.cookie = "user=; Max-Age=0; path=/";
-  window.location.href = "/";
+  window.location.href = "/logout";
 }
 
 loadMyLoans();
