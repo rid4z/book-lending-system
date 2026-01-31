@@ -1,7 +1,7 @@
 # Book Lending System
 
 A lightweight **library management system** built in **Rust** using raw TCP sockets, `sqlx`, and SQLite.
-The application supports **role-based access** (`admin`, `lender`), session-based authentication, and a simple HTML frontend.
+The application supports **role-based access** (`admin`, `lender`), session-based authentication, and a simple HTML frontend. The link of this application demo can be found [here](www.google.com).
 
 ---
 
