@@ -407,6 +407,9 @@ async fn handle_admin_books(
     pool: SqlitePool,
 ) -> anyhow::Result<()> {
 
+    // First, sync all book availability counts with actual active loans
+    sync_book_availability(&pool).await?;
+
     let rows = sqlx::query_as::<_, (
         i64,            // bookid
         String,         // title
@@ -459,6 +462,26 @@ async fn handle_admin_books(
 
     let json = serde_json::to_vec(&books)?;
     send_json(stream, &json).await
+}
+
+/// Syncs available_copies for all books based on actual active loans
+async fn sync_book_availability(pool: &SqlitePool) -> anyhow::Result<()> {
+    // For each book, recalculate available_copies = total_copies - active_loans
+    sqlx::query(
+        "
+        UPDATE books
+        SET available_copies = total_copies - (
+            SELECT COUNT(*)
+            FROM loans
+            WHERE loans.loaned_bookid = books.bookid
+            AND loans.return_date IS NULL
+        )
+        "
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 
@@ -631,6 +654,7 @@ async fn handle_admin_delete_book(
     bookid: i64,
 ) -> anyhow::Result<()> {
 
+    // Check active loans
     let active_loans: i64 = sqlx::query_scalar(
         "
         SELECT COUNT(*)
@@ -644,17 +668,55 @@ async fn handle_admin_delete_book(
     .await?;
 
     if active_loans > 0 {
-        send_html(stream, b"Cannot delete: book is currently loaned").await?;
+        let response = serde_json::json!({
+            "success": false,
+            "message": format!(
+                "Cannot delete book {}: {} active loan(s) exist",
+                bookid, active_loans
+            )
+        });
+
+        let json = serde_json::to_vec(&response)?;
+        send_json(stream, &json).await?;
         return Ok(());
     }
 
-    sqlx::query("DELETE FROM books WHERE bookid = ?")
-        .bind(bookid)
-        .execute(&pool)
-        .await?;
+    // 🔥 Use transaction for safe multi-step delete
+    let mut tx = pool.begin().await?;
 
-    send_html(stream, b"Book deleted").await
+    // 1️⃣ Delete historical loans
+    sqlx::query(
+        "
+        DELETE FROM loans
+        WHERE loaned_bookid = ?
+        "
+    )
+    .bind(bookid)
+    .execute(&mut *tx)
+    .await?;
+
+    // 2️⃣ Delete book
+    sqlx::query(
+        "
+        DELETE FROM books
+        WHERE bookid = ?
+        "
+    )
+    .bind(bookid)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    let response = serde_json::json!({
+        "success": true,
+        "message": "Book and related loan history deleted"
+    });
+
+    let json = serde_json::to_vec(&response)?;
+    send_json(stream, &json).await
 }
+
 
 async fn handle_admin_overdue(
     stream: &mut TcpStream,
@@ -705,6 +767,9 @@ async fn handle_lender_books(
     stream: &mut TcpStream,
     pool: SqlitePool,
 ) -> anyhow::Result<()> {
+    // Sync availability before showing books to lenders
+    sync_book_availability(&pool).await?;
+
     let books = sqlx::query_as::<_, LenderBook>(
         "
         SELECT 
@@ -729,6 +794,9 @@ async fn handle_lender_search(
     pool: SqlitePool,
     query: &str,
 ) -> anyhow::Result<()> {
+    // Sync availability before searching
+    sync_book_availability(&pool).await?;
+
     let q = format!("%{}%", query);
 
     let books = sqlx::query_as::<_, LenderBook>(
@@ -1254,4 +1322,3 @@ fn calculate_loan_status(
         "Borrowed".to_string()
     }
 }
-

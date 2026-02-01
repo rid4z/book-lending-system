@@ -344,13 +344,29 @@ function editBook(id) {
 async function deleteBook(id) {
   if (!confirm("Are you sure you want to delete this book?")) return;
 
-  const res = await fetch(`/admin/api/books?bookid=${id}`, {
-    method: "DELETE"
-  });
+  try {
+    const res = await fetch(`/admin/api/books?bookid=${id}`, {
+      method: "DELETE"
+    });
 
-  const msg = await res.text();
-  alert(msg);
-  loadBooks();
+    console.log('Delete response status:', res.status);
+    console.log('Delete response headers:', res.headers.get('content-type'));
+    
+    const data = await res.json();
+    console.log('Delete response data:', data);
+    
+    alert(data.message);
+    
+    // Only reload if deletion was successful
+    if (data.success) {
+      loadBooks();
+      loadBorrowed();
+      loadOverdue();
+    }
+  } catch (error) {
+    console.error('Delete error:', error);
+    alert('Error deleting book: ' + error.message);
+  }
 }
 
 
