@@ -137,16 +137,19 @@
 <!-- OVERDUE INFO -->
 <h2>Overdue Information</h2>
 <div class="card">
-  <p>If any of your books are overdue, they will appear here.</p>
+  <p>If any of your books are overdue, they will appear here. <strong>Late fee: ₹10 per day.</strong></p>
 
   <button onclick="loadOverdue()">Refresh Overdue</button>
 
   <table>
     <thead>
       <tr>
+        <th>Loan ID</th>
         <th>Book</th>
         <th>Due Date</th>
         <th>Days Overdue</th>
+        <th>Fine (₹)</th>
+        <th>Action</th>
       </tr>
     </thead>
     <tbody id="overdueTable">
@@ -221,9 +224,10 @@ async function returnBook(loanid) {
   const text = await res.text();
   alert(text);
 
-  loadMyLoans();     
-  searchBooks();     
-  loadOverdue();  
+  // Refresh all sections sequentially
+  await loadOverdue();
+  await loadMyLoans();
+  await searchBooks();
 }
 
 
@@ -236,14 +240,45 @@ async function loadOverdue() {
   tbody.innerHTML = "";
 
   data.forEach(o => {
+    const fine = o.days_overdue * 10; // ₹10 per day
     tbody.innerHTML += `
       <tr>
+        <td>${o.loanid}</td>
         <td>${o.title}</td>
         <td>${o.due_date}</td>
         <td>${o.days_overdue}</td>
+        <td>₹${fine}</td>
+        <td>
+          <button onclick="returnOverdueBook(${o.loanid}, ${fine})">Return & Pay Fine</button>
+        </td>
       </tr>
     `;
   });
+}
+
+async function returnOverdueBook(loanid, fine) {
+  if (!confirm(`This book is overdue. You need to pay a fine of ₹${fine}.\n\nProceed with return?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/lender/api/return?loanid=${loanid}`, { method: "POST" });
+    const text = await res.text();
+    
+    if (text.includes("successful")) {
+      alert(`${text}\n\nPlease pay the fine of ₹${fine} at the counter.`);
+      
+      // Refresh all sections sequentially
+      await loadOverdue();
+      await loadMyLoans();
+      await searchBooks();
+    } else {
+      alert(`Error: ${text}`);
+    }
+  } catch (error) {
+    console.error('Return error:', error);
+    alert('Failed to return book: ' + error.message);
+  }
 }
 
 

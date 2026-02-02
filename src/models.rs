@@ -61,6 +61,7 @@ pub struct LenderLoan {
 
 #[derive(Serialize)]
 pub struct OverdueLoan {
+    pub loanid: i64,
     pub title: String,
     pub due_date: String,
     pub days_overdue: i64,

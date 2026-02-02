@@ -681,7 +681,6 @@ async fn handle_admin_delete_book(
         return Ok(());
     }
 
-    // 🔥 Use transaction for safe multi-step delete
     let mut tx = pool.begin().await?;
 
     // 1️⃣ Delete historical loans
@@ -695,7 +694,6 @@ async fn handle_admin_delete_book(
     .execute(&mut *tx)
     .await?;
 
-    // 2️⃣ Delete book
     sqlx::query(
         "
         DELETE FROM books
@@ -716,7 +714,6 @@ async fn handle_admin_delete_book(
     let json = serde_json::to_vec(&response)?;
     send_json(stream, &json).await
 }
-
 
 async fn handle_admin_overdue(
     stream: &mut TcpStream,
@@ -1013,9 +1010,10 @@ async fn handle_lender_overdue(
     pool: SqlitePool,
     username: &str,
 ) -> anyhow::Result<()> {
-    let rows = sqlx::query_as::<_, (String, String)>(
+    let rows = sqlx::query_as::<_, (i64, String, String)>(
         "
         SELECT 
+            l.loanid,
             b.title,
             l.due_date
         FROM loans l
@@ -1034,11 +1032,12 @@ async fn handle_lender_overdue(
 
     let result: Vec<OverdueLoan> = rows
         .into_iter()
-        .map(|(title, due_date)| {
+        .map(|(loanid, title, due_date)| {
             let due = chrono::NaiveDate::parse_from_str(&due_date, "%Y-%m-%d").unwrap();
             let days_overdue = (today - due).num_days();
 
             OverdueLoan {
+                loanid,
                 title,
                 due_date,
                 days_overdue,
