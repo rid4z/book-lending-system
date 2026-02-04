@@ -17,8 +17,10 @@ The lenders have their own dashboard, where they can search for books, checkout 
 
 Some notable features aside from the core functionalities described are:
 1. User authentication with secure session cookies
-2. Secure password storage via salted hashing
+2. Secure password storage via salted hashing (bcrypt with built-in salt)
 3. Handling due dates and overdue dates calculations
+4. Automatic book availability synchronization based on active loans in the database
+5. Late fee calculation (₹10 per day) for overdue books with return functionality
 
 ---
 
@@ -375,9 +377,8 @@ Deletes a book. Blocked if any active (unreturned) loans exist for that book.
 
 | Status | Condition                              | Body                                          |
 |--------|----------------------------------------|-----------------------------------------------|
-| 200    | Success                                | `Book deleted`                                |
+| 200    | Success                                | `Book deleted: historical loans also deleted` |
 | 200    | Book has unreturned loans              | `Cannot delete: book is currently loaned`     |
-| 200    | `bookid` param missing or invalid      | `Missing bookid`                              |
 
 ---
 
@@ -571,6 +572,7 @@ Returns the logged-in user's overdue loans (unreturned and past due date).
 ```json
 [
   {
+    "loanid":1,
     "title": "The Rust Programming Language",
     "due_date": "2026-01-15",
     "days_overdue": 16
@@ -580,7 +582,15 @@ Returns the logged-in user's overdue loans (unreturned and past due date).
 
 | Field            | Type   | Description                          |
 |------------------|--------|--------------------------------------|
+| `loanid`         | number | Loan primary key (for return)        |
 | `title`          | string | Book title                           |
 | `due_date`       | string | `YYYY-MM-DD`                         |
 | `days_overdue`   | number | Number of days past the due date     |
+
+Frontend Late Fee Feature: The lender dashboard calculates a late fee of ₹10 per day and displays it when returning overdue books. Users see:
+
+A "Fine (₹)" column showing calculated late fees
+A "Return & Pay Fine" button for each overdue book
+Confirmation dialog showing the fine amount before return
+Alert reminding them to pay the fine at the counter after successful return
 
